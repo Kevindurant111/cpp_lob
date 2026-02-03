@@ -1,0 +1,32 @@
+# --- Visual Studio 临时文件 ---
+.vs/
+out/
+build/
+x64/
+Debug/
+Release/
+*.user
+*.aps
+*.VC.db
+*.opendb
+*.VC.opendb
+*.sdf
+*.suo
+*.sln.docqueries
+*.userprefs
+
+# --- 编译输出 ---
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.dll
+*.exp
+*.log
+*.tlog
+*.lastbuildstate
+
+# --- Google Test / 第三方库生成 ---
+_deps/
+*.gtest.json
