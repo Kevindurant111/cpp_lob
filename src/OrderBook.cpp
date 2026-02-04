@@ -220,3 +220,29 @@ MarketSnapshot OrderBook::getSnapshot(int depth) const {
 
     return snapshot;
 }
+
+Quantity OrderBook::addMarketOrder(Side side, Quantity quantity) {
+    if (quantity <= 0) return 0;
+
+    Quantity originalQuantity = quantity;
+
+    // 构造一个价格为“无穷大”或“无穷小”的临时订单
+    // 这样它就能匹配对手盘上的任何价格
+    Price marketPrice = (side == Side::Buy) ?
+        std::numeric_limits<Price>::max() :
+        0;
+
+    // 临时创建一个撮合对象
+    // 注意：ID 设为 0，因为市价单如果不成交也不会入册挂单
+    Order tempOrder{ 0, side, marketPrice, quantity };
+
+    if (side == Side::Buy) {
+        match(&tempOrder, asks);
+    }
+    else {
+        match(&tempOrder, bids);
+    }
+
+    // 返回实际成交的数量
+    return originalQuantity - tempOrder.quantity;
+}

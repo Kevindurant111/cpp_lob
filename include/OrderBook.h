@@ -34,6 +34,9 @@ public:
     // 获取盘口快照，depth 默认为 5
     MarketSnapshot getSnapshot(int depth = 5) const;
 
+    // 执行市价单，返回实际成交的总量
+    Quantity addMarketOrder(Side side, Quantity quantity);
+
 private:
     // 内部私有撮合逻辑，减少代码重复
     void match(Order* order, std::map<Price, Limit*, std::less<Price>>& partnerMap);

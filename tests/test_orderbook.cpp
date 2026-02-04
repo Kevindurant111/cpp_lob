@@ -59,3 +59,18 @@ TEST(OrderBookTest, SnapshotTest) {
     // 验证卖盘数量
     EXPECT_EQ(snapshot.asks.size(), 3);
 }
+
+TEST(OrderBookTest, MarketOrderTest) {
+    OrderBook book;
+
+    // 先在不同价格挂上卖单
+    book.addOrder(new Order{ 1, Side::Sell, 100, 10 }); // 卖一 10股
+    book.addOrder(new Order{ 2, Side::Sell, 101, 10 }); // 卖二 10股
+
+    // 发送一个 15 股的买入市价单
+    Quantity filled = book.addMarketOrder(Side::Buy, 15);
+
+    EXPECT_EQ(filled, 15);
+    EXPECT_EQ(book.getOrderCount(), 1); // 卖一应该被吃光了，只剩卖二
+    EXPECT_EQ(book.getVolumeAtPrice(Side::Sell, 101), 5); // 卖二还剩 5股
+}
