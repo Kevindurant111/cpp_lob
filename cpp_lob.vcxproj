@@ -114,6 +114,7 @@
     <ClInclude Include="include\Order.h" />
     <ClInclude Include="include\OrderBook.h" />
     <ClInclude Include="include\Types.h" />
+    <ClInclude Include="ObjectPool.h" />
     <ClInclude Include="packages\microsoft.googletest.v140.windesktop.msvcstl.dyn.rt-dyn.1.8.1.4\build\native\include\gtest\gtest-death-test.h" />
     <ClInclude Include="packages\microsoft.googletest.v140.windesktop.msvcstl.dyn.rt-dyn.1.8.1.4\build\native\include\gtest\gtest-message.h" />
     <ClInclude Include="packages\microsoft.googletest.v140.windesktop.msvcstl.dyn.rt-dyn.1.8.1.4\build\native\include\gtest\gtest-param-test.h" />

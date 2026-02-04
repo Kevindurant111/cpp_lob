@@ -110,5 +110,8 @@
     <ClInclude Include="packages\microsoft.googletest.v140.windesktop.msvcstl.dyn.rt-dyn.1.8.1.4\build\native\include\gtest\internal\custom\gtest.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ObjectPool.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
