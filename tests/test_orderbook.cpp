@@ -33,3 +33,29 @@ TEST(OrderBookTest, PartialMatchTest) {
     EXPECT_EQ(book.getOrderCount(), 1);
     EXPECT_EQ(book.getVolumeAtPrice(Side::Sell, 100), 6);
 }
+
+TEST(OrderBookTest, SnapshotTest) {
+    OrderBook book;
+
+    // 插入几个不同价格的卖单
+    book.addOrder(new Order{ 1, Side::Sell, 105, 10 });
+    book.addOrder(new Order{ 2, Side::Sell, 101, 10 });
+    book.addOrder(new Order{ 3, Side::Sell, 103, 10 });
+
+    // 插入几个不同价格的买单
+    book.addOrder(new Order{ 4, Side::Buy, 98, 5 });
+    book.addOrder(new Order{ 5, Side::Buy, 99, 5 });
+
+    auto snapshot = book.getSnapshot(5);
+
+    // 验证卖一价（最低卖价）应该是 101
+    ASSERT_FALSE(snapshot.asks.empty());
+    EXPECT_EQ(snapshot.asks[0].price, 101);
+
+    // 验证买一价（最高买价）应该是 99
+    ASSERT_FALSE(snapshot.bids.empty());
+    EXPECT_EQ(snapshot.bids[0].price, 99);
+
+    // 验证卖盘数量
+    EXPECT_EQ(snapshot.asks.size(), 3);
+}

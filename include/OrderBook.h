@@ -31,6 +31,9 @@ public:
     bool hasLimit(Side side, Price price) const;
     Quantity getVolumeAtPrice(Side side, Price price) const;
 
+    // 获取盘口快照，depth 默认为 5
+    MarketSnapshot getSnapshot(int depth = 5) const;
+
 private:
     // 内部私有撮合逻辑，减少代码重复
     void match(Order* order, std::map<Price, Limit*, std::less<Price>>& partnerMap);
