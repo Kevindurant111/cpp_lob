@@ -74,3 +74,28 @@ TEST(OrderBookTest, MarketOrderTest) {
     EXPECT_EQ(book.getOrderCount(), 1); // 卖一应该被吃光了，只剩卖二
     EXPECT_EQ(book.getVolumeAtPrice(Side::Sell, 101), 5); // 卖二还剩 5股
 }
+
+TEST(OrderBookTest, TradeCallbackTest) {
+    OrderBook book;
+    TradeReport lastTrade{};
+    int tradeCount = 0;
+
+    // 设置一个简单的回调，把成交信息记录下来
+    book.setTradeCallback([&](const TradeReport& report) {
+        lastTrade = report;
+        tradeCount++;
+        });
+
+    // 1. 先挂一个卖单 (Maker)
+    book.addOrder(new Order{ 101, Side::Sell, 100, 10 });
+
+    // 2. 发送一个买单去匹配 (Taker)
+    book.addOrder(new Order{ 102, Side::Buy, 100, 4 });
+
+    // 验证回调是否被触发
+    EXPECT_EQ(tradeCount, 1);
+    EXPECT_EQ(lastTrade.makerId, 101);
+    EXPECT_EQ(lastTrade.takerId, 102);
+    EXPECT_EQ(lastTrade.quantity, 4);
+    EXPECT_EQ(lastTrade.price, 100);
+}

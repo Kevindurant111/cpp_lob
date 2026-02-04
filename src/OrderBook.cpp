@@ -2,6 +2,14 @@
 #include "Limit.h"
 #include <algorithm>
 
+OrderBook::OrderBook() {
+    // 默认回调：只打印一行简单的日志
+    tradeCallback = [](const TradeReport& report) {
+        printf("TRADE: Taker %llu matched Maker %llu | Qty: %u @ Price: %lld\n",
+            report.takerId, report.makerId, report.quantity, report.price);
+        };
+}
+
 OrderBook::~OrderBook() {
     for (auto& pair : bids) delete pair.second;
     for (auto& pair : asks) delete pair.second;
@@ -56,6 +64,17 @@ void OrderBook::match(Order* order, std::map<Price, Limit*, std::less<Price>>& p
             // 计算本次能够成交的数量：取入场单剩余量和对手单存量的最小值
             Quantity matchQty = std::min(order->quantity, curr->quantity);
 
+            // --- 触发成交回调 ---
+            if (tradeCallback) {
+                tradeCallback(TradeReport{
+                    curr->id,       // Maker: 已经在书上的单子
+                    order->id,      // Taker: 刚进来的这笔单子
+                    it->first,      // 价格以 Maker 价格为准
+                    matchQty,
+                    order->side
+                    });
+            }
+
             // --- 核心撮合步骤 ---
             order->quantity -= matchQty;      // 减少入场订单的剩余数量
             curr->quantity -= matchQty;       // 减少对手盘订单的剩余数量
@@ -101,6 +120,17 @@ void OrderBook::match(Order* order, std::map<Price, Limit*, std::greater<Price>>
         Order* curr = limit->head;
         while (curr && order->quantity > 0) {
             Quantity matchQty = std::min(order->quantity, curr->quantity);
+
+            // --- 触发成交回调 ---
+            if (tradeCallback) {
+                tradeCallback(TradeReport{
+                    curr->id,       // Maker: 已经在书上的单子
+                    order->id,      // Taker: 刚进来的这笔单子
+                    it->first,      // 价格以 Maker 价格为准
+                    matchQty,
+                    order->side
+                    });
+            }
 
             order->quantity -= matchQty;
             curr->quantity -= matchQty;

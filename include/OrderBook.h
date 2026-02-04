@@ -4,9 +4,15 @@
 #include "Limit.h"
 #include "Order.h"
 #include "Types.h"
+#include <functional>
+
+// 定义回调函数的类型
+using TradeCallback = std::function<void(const TradeReport&)>;
 
 class OrderBook {
 private:
+    TradeCallback tradeCallback; // 存储回调
+
     // 卖盘：价格升序
     std::map<Price, Limit*> asks;
 
@@ -17,7 +23,7 @@ private:
     std::unordered_map<OrderId, Order*> orderIndex;
 
 public:
-    OrderBook() = default;
+    OrderBook();
     ~OrderBook();
 
     // 核心撮合接口
@@ -37,6 +43,10 @@ public:
     // 执行市价单，返回实际成交的总量
     Quantity addMarketOrder(Side side, Quantity quantity);
 
+    // 设置回调接口
+    void setTradeCallback(TradeCallback callback) {
+        tradeCallback = callback;
+    }
 private:
     // 内部私有撮合逻辑，减少代码重复
     void match(Order* order, std::map<Price, Limit*, std::less<Price>>& partnerMap);

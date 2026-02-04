@@ -20,3 +20,11 @@ struct MarketSnapshot {
     std::vector<Level> bids;
     std::vector<Level> asks;
 };
+
+struct TradeReport {
+    OrderId makerId;   // 挂单方ID（被动成交）
+    OrderId takerId;   // 进场方ID（主动成交）
+    Price price;       // 成交价格
+    Quantity quantity; // 成交数量
+    Side takerSide;    // 主动方方向
+};
