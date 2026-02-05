@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include "Limit.h"
 #include "Order.h"
+#include "ObjectPool.h"
 #include "Types.h"
 #include <functional>
 
@@ -11,6 +12,11 @@ using TradeCallback = std::function<void(const TradeReport&)>;
 
 class OrderBook {
 private:
+    // --- 内存池定义在此 ---
+    // 建议预分配足够大的空间，例如 10 万个对象
+    ThreadSafeObjectPool<Order> orderPool;
+    ThreadSafeObjectPool<Limit> limitPool;
+
     TradeCallback tradeCallback; // 存储回调
 
     // 卖盘：价格升序
@@ -27,7 +33,7 @@ public:
     ~OrderBook();
 
     // 核心撮合接口
-    void addOrder(Order* order);
+    OrderId addOrder(Side side, Price price, Quantity quantity);
 
     // 撤单接口
     void cancelOrder(OrderId orderId);

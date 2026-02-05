@@ -9,7 +9,8 @@ struct Limit {
     Order* head = nullptr;
     Order* tail = nullptr;
 
-    Limit(Price p) : price(p) {}
+    Limit() : price(0), totalVolume(0), orderCount(0), head(nullptr), tail(nullptr) {}
+    Limit(Price p) : price(p), totalVolume(0), orderCount(0), head(nullptr), tail(nullptr) {}
 };
 
 void addOrderToLimit(Limit& limit, Order* order);

@@ -1,8 +1,9 @@
 #include "OrderBook.h"
 #include "Limit.h"
+#include <atomic>
 #include <algorithm>
 
-OrderBook::OrderBook() {
+OrderBook::OrderBook() : orderPool(100000), limitPool(10000) {
     // 默认回调：只打印一行简单的日志
     tradeCallback = [](const TradeReport& report) {
         printf("TRADE: Taker %llu matched Maker %llu | Qty: %u @ Price: %lld\n",
@@ -11,10 +12,16 @@ OrderBook::OrderBook() {
 }
 
 OrderBook::~OrderBook() {
-    for (auto& pair : bids) delete pair.second;
-    for (auto& pair : asks) delete pair.second;
+    // 1. 清空容器（此时容器内存放的是指向池化内存的指针，无需手动 delete）
+    orderIndex.clear();
+    bids.clear();
+    asks.clear();
+
+    // 2. 池子成员 (orderPool, limitPool) 会在这里被自动销毁
+    // 它们的析构函数会释放所有预分配的大块内存。
 }
 
+/*
 void OrderBook::addOrder(Order* order) {
     // 1. 尝试撮合
     if (order->side == Side::Buy) {
@@ -40,95 +47,129 @@ void OrderBook::addOrder(Order* order) {
         delete order; // 已完全成交
     }
 }
+*/
 
-// 统一的撮合逻辑：针对入场订单（order）在对手盘（partnerMap）中寻找匹配
-// 如果入场的是买单，partnerMap 就是卖盘 (Asks)，按价格升序排列
+OrderId OrderBook::addOrder(Side side, Price price, Quantity quantity) {
+    Order* order = orderPool.acquire();
+    static std::atomic<OrderId> nextId{ 1 };
+    order->id = nextId.fetch_add(1);
+    order->side = side;
+    order->price = price;
+    order->quantity = quantity;
+    order->next = nullptr;
+    order->prev = nullptr;
+
+    if (order->side == Side::Buy) {
+        match(order, asks);
+    }
+    else {
+        match(order, bids);
+    }
+
+    if (order->quantity > 0) {
+        orderIndex[order->id] = order;
+        // 分开处理买卖盘，避免类型不匹配错误
+        if (order->side == Side::Buy) {
+            if (bids.find(order->price) == bids.end()) {
+                Limit* newLimit = limitPool.acquire();
+                newLimit->price = order->price;
+                newLimit->totalVolume = 0;
+                newLimit->orderCount = 0;
+                newLimit->head = newLimit->tail = nullptr;
+                bids[order->price] = newLimit;
+            }
+            addOrderToLimit(*bids[order->price], order);
+        }
+        else {
+            if (asks.find(order->price) == asks.end()) {
+                Limit* newLimit = limitPool.acquire();
+                newLimit->price = order->price;
+                newLimit->totalVolume = 0;
+                newLimit->orderCount = 0;
+                newLimit->head = newLimit->tail = nullptr;
+                asks[order->price] = newLimit;
+            }
+            addOrderToLimit(*asks[order->price], order);
+        }
+    }
+    else {
+        // 如果完全成交，记得释放 Taker 订单
+        orderPool.release(order);
+    }
+    return order->id;
+}
+
 void OrderBook::match(Order* order, std::map<Price, Limit*, std::less<Price>>& partnerMap) {
-
-    // 只要入场订单还有剩余数量，且对手盘不为空，就继续撮合
     while (order->quantity > 0 && !partnerMap.empty()) {
-
-        // 获取对手盘中价格最优的档位（对于卖盘是最低价，对于买盘是最高价）
         auto it = partnerMap.begin();
-
-        // 价格检查：如果入场买单价格 < 对手盘最低卖价，无法成交，跳出循环
-        // 注意：如果是撮合卖单，这里的判断逻辑需要根据传入的 partnerMap 排序规则（大于/小于）相应调整
+        // 买单价格必须 >= 卖盘最低价才能成交
         if (order->price < it->first) break;
 
-        // 获取该价格档位（Limit Node）对应的订单链表
         Limit* limit = it->second;
-        Order* curr = limit->head; // 从该档位时间最早的订单开始撮合（时间优先）
+        Order* curr = limit->head;
 
-        // 遍历当前价格档位下的所有订单
         while (curr && order->quantity > 0) {
-            // 计算本次能够成交的数量：取入场单剩余量和对手单存量的最小值
             Quantity matchQty = std::min(order->quantity, curr->quantity);
 
-            // --- 触发成交回调 ---
+            // 触发成交回报回调
             if (tradeCallback) {
                 tradeCallback(TradeReport{
-                    curr->id,       // Maker: 已经在书上的单子
-                    order->id,      // Taker: 刚进来的这笔单子
-                    it->first,      // 价格以 Maker 价格为准
+                    curr->id,       // Maker (已经在书上的卖单)
+                    order->id,      // Taker (新进来的买单)
+                    it->first,      // 成交价
                     matchQty,
-                    order->side
+                    Side::Buy       // 主动方是买方
                     });
             }
 
-            // --- 核心撮合步骤 ---
-            order->quantity -= matchQty;      // 减少入场订单的剩余数量
-            curr->quantity -= matchQty;       // 减少对手盘订单的剩余数量
-            limit->totalVolume -= matchQty;   // 同步更新该价格档位的总报单量
+            // 更新数量
+            order->quantity -= matchQty;
+            curr->quantity -= matchQty;
+            limit->totalVolume -= matchQty;
 
-            // 如果对手盘的这个订单被完全吃掉（成交完）
             if (curr->quantity == 0) {
-                Order* next = curr->next;      // 暂存下一个订单指针
-
-                // 从该价格档位的双向链表中移除当前订单
+                Order* next = curr->next;
+                // 从档位链表中移除并从索引中删除
                 removeOrderFromLimit(*limit, curr);
-
-                // 从全局订单索引中删除该订单 ID（防止后续通过 ID 还能查到已成交单）
                 orderIndex.erase(curr->id);
 
-                // curr = next; 指向下一个对手单，继续处理当前档位
+                // --- 核心修改：回收订单内存到池子 ---
+                orderPool.release(curr);
+
                 curr = next;
             }
             else {
-                // 如果对手盘订单还没被吃完，说明入场订单已经消耗光了
-                // 此时直接跳出内层循环
-                break;
+                break; // 当前卖单没被吃完，买单已耗尽
             }
         }
 
-        // 检查该价格档位是否已经空了（订单数量为 0）
+        // 如果档位空了，移除档位并回收 Limit 内存
         if (limit->orderCount == 0) {
-            // 释放该价格档位的内存（Limit 对象）
-            delete limit;
-            // 从 map 结构中移除该价格节点
             partnerMap.erase(it);
+            limitPool.release(limit);
         }
     }
 }
 
-// 统一的撮合逻辑：针对卖单撮合买盘 (partnerMap 是 bids)
 void OrderBook::match(Order* order, std::map<Price, Limit*, std::greater<Price>>& partnerMap) {
     while (order->quantity > 0 && !partnerMap.empty()) {
         auto it = partnerMap.begin();
+        // 卖单价格必须 <= 买盘最高价才能成交
         if (order->price > it->first) break;
 
         Limit* limit = it->second;
         Order* curr = limit->head;
+
         while (curr && order->quantity > 0) {
             Quantity matchQty = std::min(order->quantity, curr->quantity);
 
-            // --- 触发成交回调 ---
             if (tradeCallback) {
                 tradeCallback(TradeReport{
-                    curr->id,       // Maker: 已经在书上的单子
-                    order->id,      // Taker: 刚进来的这笔单子
-                    it->first,      // 价格以 Maker 价格为准
+                    curr->id,       // Maker (已经在书上的买单)
+                    order->id,      // Taker (新进来的卖单)
+                    it->first,
                     matchQty,
-                    order->side
+                    Side::Sell      // 主动方是卖方
                     });
             }
 
@@ -140,16 +181,20 @@ void OrderBook::match(Order* order, std::map<Price, Limit*, std::greater<Price>>
                 Order* next = curr->next;
                 removeOrderFromLimit(*limit, curr);
                 orderIndex.erase(curr->id);
-                // delete curr;
+
+                // --- 核心修改：回收订单内存到池子 ---
+                orderPool.release(curr);
+
                 curr = next;
             }
             else {
                 break;
             }
         }
+
         if (limit->orderCount == 0) {
-            delete limit;
             partnerMap.erase(it);
+            limitPool.release(limit);
         }
     }
 }
@@ -173,60 +218,40 @@ Quantity OrderBook::getVolumeAtPrice(Side side, Price price) const {
     }
 }
 
-// 撤单函数：通过订单 ID 撤销一个尚未完全成交的挂单
 void OrderBook::cancelOrder(OrderId orderId) {
-    // 1. 在全局哈希表 orderIndex 中查找该订单 ID
     auto it = orderIndex.find(orderId);
-
-    // 如果找不到该 ID，说明订单已成交、已撤销或根本不存在，直接返回
     if (it == orderIndex.end()) return;
 
-    // 2. 获取订单对象的指针和该订单的挂单价格
     Order* order = it->second;
     Price price = order->price;
 
-    // 3. 根据订单的方向（买或卖）进入不同的处理逻辑
     if (order->side == Side::Buy) {
-        // --- 处理买单撤单 ---
-        // 在买盘 (bids) 中找到该价格对应的档位 (Limit 对象)
         auto lit = bids.find(price);
         if (lit != bids.end()) {
-            // 从该价格档位的总报单量中减去该订单“剩余”的数量
-            lit->second->totalVolume -= order->quantity;
-
-            // 调用辅助函数，将 order 从该档位的双向链表中断开连接
-            removeOrderFromLimit(*(lit->second), order);
-
-            // 如果该价格档位下的订单数为 0，说明该价格已无任何挂单
-            if (lit->second->orderCount == 0) {
-                delete lit->second; // 释放 Limit 对象的内存
-                bids.erase(lit);    // 从买盘 map 中移除该价格节点
+            Limit* limit = lit->second;
+            limit->totalVolume -= order->quantity;
+            removeOrderFromLimit(*limit, order);
+            if (limit->orderCount == 0) {
+                limitPool.release(limit);
+                bids.erase(lit);
             }
         }
     }
     else {
-        // --- 处理卖单撤单 ---
-        // 在卖盘 (asks) 中找到该价格对应的档位
         auto lit = asks.find(price);
         if (lit != asks.end()) {
-            // 同步减少卖盘该档位的总报单量
-            lit->second->totalVolume -= order->quantity;
-
-            // 从卖盘链表中移除该订单
-            removeOrderFromLimit(*(lit->second), order);
-
-            // 如果档位空了，清理内存并移除价格节点
-            if (lit->second->orderCount == 0) {
-                delete lit->second;
+            Limit* limit = lit->second;
+            limit->totalVolume -= order->quantity;
+            removeOrderFromLimit(*limit, order);
+            if (limit->orderCount == 0) {
+                limitPool.release(limit);
                 asks.erase(lit);
             }
         }
     }
 
-    // 4. 最后从全局订单索引中移除该 ID，确保该订单彻底从系统消失
     orderIndex.erase(it);
-
-    // 注意：如果是生产环境，此处通常需要 delete order; 释放订单内存
+    orderPool.release(order);
 }
 
 MarketSnapshot OrderBook::getSnapshot(int depth) const {
