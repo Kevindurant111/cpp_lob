@@ -104,10 +104,16 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\OrderBook.cpp" />
     <ClCompile Include="src\Limit.cpp" />
     <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="src\OrderBook.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Limit.h" />
